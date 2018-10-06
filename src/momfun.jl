@@ -1,4 +1,4 @@
-struct OnceDiffMoments{A, G, T, JC, AC, AG}
+struct OnceDiffMoments{G, T, JC, AC, AG}
     gi::G       ## Moment Function
     #gwi::GW     ## Weighted moment Function
     # gn::GN      ## Avg. Moment Function
@@ -29,6 +29,7 @@ struct OnceDiffMoments{A, G, T, JC, AC, AG}
     ## Caches
     mxm::Array{T, 2}
     mxk::Array{T, 2}
+    kxm::Array{T, 2}
     mx1::Array{T, 1}
 
 end
@@ -36,7 +37,7 @@ end
 struct AutoDiff end
 struct FiniteDiff end
 
-function OnceDiffMoments(gi!, gi_val, x0; autodiff = :finite)
+function OnceDiffMoments(gi!, gi_val, x0)
     ## Check whether the moment condition can be
     ## correctly evaluated
     try
@@ -44,9 +45,6 @@ function OnceDiffMoments(gi!, gi_val, x0; autodiff = :finite)
     catch
         throw()
     end
-
-    autotag = any(autodiff .== (:finite, :central)) ? :finite : :auto
-
     ## Setup containers
     ## Containers need to account for the fact that
     ## autodiff can be forward
@@ -74,56 +72,59 @@ function OnceDiffMoments(gi!, gi_val, x0; autodiff = :finite)
                   gi_val,
                   gn_val,
                   gwn_val,
+
                   Jn_val,
                   Jwn_val,
+
                   copy(x0), copy(x0), copy(x0), copy(x0),
                   Array{Float64, 1}(undef, n),
                   Array{Float64, 1}(undef, n),
-                  (n, m, k), diffcache, autocache, autocfg,
-                  Array{Float64, 1}(undef, m, m),
-                  Array{Float64, 1}(undef, m, k),
-                  Array{Float64, 1}(undef, m, 1))
+                  (n, m, k),
+                  diffcache, autocache, autocfg,
+                  Array{Float64, 2}(undef, m, m),
+                  Array{Float64, 2}(undef, m, k),
+                  Array{Float64, 2}(undef, k, m),
+                  Array{Float64, 1}(undef, m))
 end
 
 
 function esteq!(mf::Mombastic.OnceDiffMoments, x0)
-    gi_val = getcache(mf.Acache, eltype(x0))
+    gi_val = getcache(mf.autocache, eltype(x0))
     mf.gi(gi_val, x0)
     sum!(mf.gn_val', gi_val)'
 end
 
 function esteq!!(gn_val, mf::Mombastic.OnceDiffMoments, x0)
-    gi_val = getcache(mf.Acache, eltype(x0))
+    gi_val = getcache(mf.autocache, eltype(x0))
     mf.gi(gi_val, x0)
     sum!(gn_val', gi_val)'
 end
 
 function jacobian_esteq!(mf::Mombastic.OnceDiffMoments, x0, ::Type{Val{FiniteDiff}})
     #gi_val = getcache(mf.Acache, eltype(x0))
-    f!(gn_val, x0) = esteq!(gn_val, mf, x0)
-    DiffEqDiffTools.finite_difference_jacobian!(mf.Jn_val, f!, x0, mf.Jcache)
+    f!(gn_val, x0) = esteq!!(gn_val, mf, x0)
+    DiffEqDiffTools.finite_difference_jacobian!(mf.Jn_val, f!, x0, mf.diffcache)
 end
 
 function jacobian_esteq!(mf::Mombastic.OnceDiffMoments, x0, ::Type{Val{AutoDiff}})
     #gi_val = getcache(mf.Acache, eltype(x0))
     f!(gn_val, x0) = esteq!!(gn_val, mf, x0)
-    ForwardDiff.jacobian!(mf.Jn_val, f!, mf.gn_val, x0, mf.Acgf)
+    ForwardDiff.jacobian!(mf.Jn_val, f!, mf.gn_val, x0, mf.autocgf)
 end
 
 
-function gmmobjective(mf::Mombastic.OnceDiffMoments, W, x0)
+function objective_gmm(mf::Mombastic.OnceDiffMoments, W, x0)
     g = Mombastic.esteq!(mf, x0)
-    #mul!(mf.mx1, W, g)
-    g'*W*g
+    mul!(mf.mx1, W, g)
+    g'*mf.mx1
 end
 
-function gradient_gmm!(grad_gmm, mf::Mombastic.OnceDiffMoments, W, x0)
+function gradient_gmm!(grad_gmm, mf::Mombastic.OnceDiffMoments, W, x0, df::Type{T1} = Val{AutoDiff}) where T1
     Mombastic.esteq!(mf, x0)
-    Mombastic.jacobian_esteq(mf, x0)
-    mul!(mf.mxk, dg', W)
-    mul!(grad_gmm, mf.mxk, g)
+    Mombastic.jacobian_esteq!(mf, x0, df)
+    mul!(mf.kxm, mf.Jn_val', W)
+    mul!(grad_gmm, mf.kxm, mf.gn_val)
 end
-
 
 Base.size(mf::Mombastic.OnceDiffMoments) = mf.size
 

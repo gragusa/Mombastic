@@ -2,7 +2,7 @@
 # MathProgBase solver interface - GMMEstimator
 ################################################################################
 
-function MathProgBase.initialize(d::GMMEstimator, rf::Vector{Symbol})
+function MathProgBase.initialize(d::GMME, rf::Vector{Symbol})
     for feat in rf
         if !(feat in [:Grad, :Jac, :Hess])
             error("Unsupported feature $feat")
@@ -10,22 +10,24 @@ function MathProgBase.initialize(d::GMMEstimator, rf::Vector{Symbol})
     end
 end
 
-MathProgBase.features_available(e::GMMEstimator) = [:Grad, :Jac, :Hess]
+MathProgBase.features_available(e::GMME) = [:Grad, :Jac, :Hess]
 
-function MathProgBase.eval_f(e::GMMEstimator, theta)
-    gmmobjective(e.mf, last(e.W), theta)
+function MathProgBase.eval_f(e::GMME, theta)
+    objective_gmm(e.mf, last(e.W), theta)
 end
 
-function MathProgBase.eval_grad_f(e::GMMEstimator, grad_f, theta)
-    gmmgradient!(grad_f, e.mf, last(e.W), theta)
+function MathProgBase.eval_grad_f(e::GMME, grad_f, theta)
+    gradient_gmm!(grad_f, e.mf, last(e.W), theta, Val{e.diff})
 end
 
-MathProgBase.jac_structure(e::GMMEstimator) = Int[],Int[]
-MathProgBase.eval_g(e::GMMEstimator, g, theta) = nothing
-MathProgBase.eval_jac_g(e::GMMEstimator, J, x) = nothing
+MathProgBase.jac_structure(e::GMME) = Int[],Int[]
+MathProgBase.eval_g(e::GMME, g, theta) = nothing
+MathProgBase.eval_jac_g(e::GMME, J, x) = nothing
 
-MathProgBase.hesslag_structure(d::GMMEstimator) = Int[], Int[]
-MathProgBase.eval_hesslag(d::GMMEstimator, H, x, σ, μ) = nothing
+MathProgBase.hesslag_structure(d::GMME) = Int[], Int[]
+MathProgBase.eval_hesslag(d::GMME, H, x, σ, μ) = nothing
+
+
 
 
 # function MathProgBase.eval_g(e::GMMEstimator{M, V, T, S}, g, theta) where {M, V, T<:Constrained, S}
