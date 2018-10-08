@@ -5,11 +5,11 @@ using LinearAlgebra
 
 Random.seed!(1)
 n, m, p = 1000, 6, 4
-y = randn(n,1);
-x = randn(n,p);
-z = randn(n,m);
+const y = randn(n,1);
+const x = randn(n,p);
+const z = randn(n,m);
 gi_val = Array{Float64}(undef, n, m);
-
+ 
 function gi!(gi_val, x0)
     gi_val .= z.*(y .- x*x0)
     return
