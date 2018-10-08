@@ -1,9 +1,7 @@
-mutable struct GMME{A, CS, BC, TI, MF} <: MathProgBase.AbstractNLPEvaluator
+mutable struct GMME{A, CS, MF} <: MathProgBase.AbstractNLPEvaluator
     diff::A
     constraints::CS
-    boxconstraints::BC
-    itermgr::TI
-    W::Array{Array{Float64,2},1}
+    W::Array{Float64,2}
     mf::MF
 end
 
@@ -13,18 +11,21 @@ function gmm(mf::Mombastic.OnceDiffMoments,
              bc::Union{BoxConstraints, Nothing} = nothing,
              gc::GenericConstraints = Unconstrained();
              W_initial::Union{Matrix{T}, Nothing} = nothing,
+             demean_W::Bool = false,
              fdtype::Symbol = :finitediff,
              solver = IpoptSolver(hessian_approximation = "limited-memory", print_level=0, sb = "yes")) where {T<:AbstractFloat, F}
 
     n, m, p = size(mf)
 
     nbc = setboxconstraint(bc, p)::BoxConstraints{Float64}
-    nW0 = setinitialW(W_initial, m)::Array{Float64, 2}
+    W   = setinitialW(W_initial, m)::Array{Float64, 2}
 
-    diff = fdtype == :forwarddiff ? AutoDiff : FiniteDiff
-    gmme = GMME(diff, gc, nbc, itrmgr, [nW0], mf)
+    difftype = fdtype == :forwarddiff ? AutoDiff : FiniteDiff
+    gmme = GMME(difftype, gc, W, mf)
 
-    solver = IpoptSolver(hessian_approximation = "limited-memory", print_level=0, sb = "yes")
+    state = IterationState([1], [10.], x0)
+
+    #solver = IpoptSolver(hessian_approximation = "limited-memory", print_level=0, sb = "yes")
 
     nl = MathProgBase.NonlinearModel(solver)
     MathProgBase.loadproblem!(nl,
@@ -37,7 +38,15 @@ function gmm(mf::Mombastic.OnceDiffMoments,
                             :Min,
                             gmme)
     MathProgBase.setwarmstart!(nl, float(x_start))
-    MathProgBase.optimize!(nl)
+
+    while !(finished(itrmgr, state)
+        if itern(state) > 1
+            esteq!(mf, gmm.inner.x)
+            CovarianceMatrices.vcov!(W, mf.gn_val, itr.k)
+            demean!(W)
+        end
+        MathProgBase.optimize!(nl)
+    end
     return nl
 end
 
